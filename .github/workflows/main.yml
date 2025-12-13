@@ -1,0 +1,20 @@
+name: Sync fork from upstream (master)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # UTC 时间。例：每天 18:10 UTC（JST 次日 03:10）
+    - cron: "10 18 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync fork master from upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh repo sync ${{ github.repository }} -b master
