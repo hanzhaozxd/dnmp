@@ -234,13 +234,20 @@ if ($xpath->query('/v20:package/v20:dependencies')->length === 1) {
 	$ns = '';
 } else {
 	fwrite(STDERR, "Unsupported namespace of the XML of package version details\n");
+	exit(1);
 }
 $nodes = $xpath->query("/{$ns}package/{$ns}name");
 $name = trim((string) $nodes[0]->nodeValue);
-if ($ns === '') {
-	$nodes = $xpath->query("/{$ns}package/{$ns}version");
-} else {
-	$nodes = $xpath->query("/{$ns}package/{$ns}version/{$ns}release");
+$nodes = $xpath->query("/{$ns}package/{$ns}version/{$ns}release");
+if ($nodes->length === 0) {
+	$nodes = $xpath->query("/{$ns}package/{$ns}release/{$ns}version");
+	if ($nodes->length === 0) {
+		$nodes = $xpath->query("/{$ns}package/{$ns}version");
+		if ($nodes->length === 0) {
+			fwrite(STDERR, "Unable to find the version in the XML of package version details\n");
+			exit(1);
+		}
+	}
 }
 $version = trim((string) $nodes[0]->nodeValue);
 echo "EXTRACTPACKAGEVERSIONFROMXML_NAME='{$name}'\n";
@@ -1075,6 +1082,14 @@ buildRequiredPackageLists() {
 					buildRequiredPackageLists_volatile="$buildRequiredPackageLists_volatile automake libtool"
 					COMPILE_LIBS="$COMPILE_LIBS libip2location"
 				fi
+				;;
+			judy@alpine)
+				buildRequiredPackageLists_persistent="$buildRequiredPackageLists_persistent judy"
+				buildRequiredPackageLists_volatile="$buildRequiredPackageLists_volatile judy-dev"
+				;;
+			judy@debian)
+				buildRequiredPackageLists_persistent="$buildRequiredPackageLists_persistent libjudydebian1"
+				buildRequiredPackageLists_volatile="$buildRequiredPackageLists_volatile libjudy-dev"
 				;;
 			ldap@alpine)
 				buildRequiredPackageLists_persistent="$buildRequiredPackageLists_persistent libldap"
@@ -2075,7 +2090,13 @@ markPreinstalledPackagesAsUsed() {
 installRequiredPackages() {
 	printf '### INSTALLING REQUIRED PACKAGES ###\n'
 	printf '# Packages to be kept after installation: %s\n' "$PACKAGES_PERSISTENT_NEW"
+	if test -n "${IPE_SAVE_PERMDEPS_TO:-}"; then
+		printf '%s\n' "$PACKAGES_PERSISTENT_NEW" >"$IPE_SAVE_PERMDEPS_TO"
+	fi
 	printf '# Packages to be used only for installation: %s\n' "$PACKAGES_VOLATILE"
+	if test -n "${IPE_SAVE_VOLDEPS_TO:-}"; then
+		printf '%s\n' "$PACKAGES_VOLATILE" >"$IPE_SAVE_VOLDEPS_TO"
+	fi
 	case "$DISTRO" in
 		alpine)
 			apk add $IPE_APK_FLAGS $PACKAGES_PERSISTENT_NEW $PACKAGES_VOLATILE
@@ -3289,19 +3310,23 @@ installRemoteModule() {
 				fi
 			fi
 			if ! test -e /usr/local/lib/libcmark.so && ! test -e /usr/local/lib64/libcmark.so && ! test -e /usr/lib/libcmark.so && ! test -e /usr/lib64/libcmark.so && ! test -e /lib/libcmark.so; then
-				if test $(compareVersions "$(cmake --version | head -n1 | sed -E 's/^.* //')" '3.7') -lt 0; then
-					installRemoteModule_tmp=0.29.0
+				installRemoteModule_cmakeVersion="$(cmake --version | head -n1 | sed -E 's/^.* //')"
+				if test $(compareVersions "$installRemoteModule_cmakeVersion" '3.7') -lt 0; then
+					installRemoteModule_cmarkVersion=0.29.0
+				elif test $(compareVersions "$installRemoteModule_cmakeVersion" '3.15') -lt 0; then
+					installRemoteModule_cmarkVersion=0.31.1
 				else
-					installRemoteModule_tmp=0.31.1
+					installRemoteModule_cmarkVersion=0.31.2
 				fi
-				cd "$(getPackageSource https://github.com/commonmark/cmark/archive/$installRemoteModule_tmp.tar.gz)"
+				printf 'Installing libcmark %s\n' "$installRemoteModule_cmarkVersion"
+				cd "$(getPackageSource https://github.com/commonmark/cmark/archive/$installRemoteModule_cmarkVersion.tar.gz)"
 				make -s -j$(getProcessorCount) cmake_build
 				make -s -j$(getProcessorCount) install
 				cd - >/dev/null
 				case "$DISTRO" in
 					alpine)
-						if test -e /usr/local/lib64/libcmark.so.$installRemoteModule_tmp && ! test -e /usr/local/lib/libcmark.so.$installRemoteModule_tmp; then
-							ln -s /usr/local/lib64/libcmark.so.$installRemoteModule_tmp /usr/local/lib/
+						if test -e /usr/local/lib64/libcmark.so.$installRemoteModule_cmarkVersion && ! test -e /usr/local/lib/libcmark.so.$installRemoteModule_cmarkVersion; then
+							ln -s /usr/local/lib64/libcmark.so.$installRemoteModule_cmarkVersion /usr/local/lib/
 						fi
 						;;
 					*)
@@ -3832,6 +3857,8 @@ installRemoteModule() {
 					installRemoteModule_version=22.0.0
 				elif test $PHP_MAJMIN_VERSION -lt 802; then
 					installRemoteModule_version=22.1.2
+				elif test $PHP_MAJMIN_VERSION -lt 803; then
+					installRemoteModule_version=25.2.0
 				fi
 			else
 				installRemoteModule_version="$(resolvePeclStabilityVersion "$installRemoteModule_module" "$installRemoteModule_version")"
@@ -4005,6 +4032,8 @@ installRemoteModule() {
 					installRemoteModule_version=3.24.4
 				elif test $PHP_MAJMIN_VERSION -lt 801; then
 					installRemoteModule_version=3.25.3
+				elif test $PHP_MAJMIN_VERSION -lt 802; then
+					installRemoteModule_version=4.33.5
 				fi
 			fi
 			;;
@@ -4346,6 +4375,8 @@ installRemoteModule() {
 					installRemoteModule_version=5.10.1
 				elif test $PHP_MAJMIN_VERSION -le 800; then
 					installRemoteModule_version=5.11.1
+				elif test $PHP_MAJMIN_VERSION -le 802; then
+					installRemoteModule_version=5.12.0
 				fi
 			fi
 			;;
